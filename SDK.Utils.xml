@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for UNIX (Red Hat Enterprise Linux for x86-64) 2014.1.3 (Build 775)" ts="2016-10-10 16:36:49">
+<Class name="SDK.Utils">
+<Super>%RegisteredObject</Super>
+<TimeChanged>64201,59776.974663</TimeChanged>
+<TimeCreated>64201,43355.933117</TimeCreated>
+
+<Method name="Load">
+<Description>
+TODO: load all XDatas (?)</Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	set sc = ..LoadInternal("zlangc")
+	if 'sc do $system.OBJ.DisplayError(sc)
+	
+	set sc = ..LoadInternal("instanceVars")
+	if 'sc do $system.OBJ.DisplayError(sc)
+	
+	set sc = ..LoadInternal("bashprofile")
+	if 'sc do $system.OBJ.DisplayError(sc)
+	
+	set sc = ..LoadInternal("bashrc")
+	if 'sc do $system.OBJ.DisplayError(sc)
+]]></Implementation>
+</Method>
+
+<Method name="LoadInternal">
+<Description>
+TODO: detect OS
+TODO: detect user home directory
+TODO: detect if file has been appended to (Update?)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>element</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set xdata = ##class(%Dictionary.XDataDefinition).%OpenId($classname()_"||"_element)
+	if xdata = "" quit $System.Status.Error(5001,"XDATA not found: "_element)
+	
+	set sc = ##class(%XML.XPATH.Document).CreateFromStream(xdata.Data,.doc)
+	if 'sc quit sc
+	
+	set sc = ..evalXPath(doc,"@os",.isOS,"false")
+	if 'sc quit sc
+	
+	set sc = ..evalXPath(doc,"@append",.append,"false")
+	if 'sc quit sc
+	
+	set sc = ..evalXPath(doc,"@name",.name)
+	if 'sc quit sc
+	
+	set sc = ..evalXPath(doc,"text()",.text)
+	if 'sc quit sc
+	
+	set isOS = (isOS="true")
+	set append = (append="true")
+	
+	if isOS {
+		set file = ##class(%Stream.FileCharacter).%New()
+		set file.Filename=name
+		
+		if append {
+			do file.MoveToEnd()
+		} else {
+			do file.Clear()
+		}
+		
+		do file.Write(text)
+		do file.%Save()
+	} else {
+		set rtn = ##class(%Routine).%New(name)
+		if rtn="" quit $system.Status.Error(5001,"Invalid routine name: "_name)
+		do rtn.Write(text)
+		set sc = rtn.%Save()
+		if 'sc quit sc
+		
+		set sc=$System.OBJ.CompileList(name_".mac","ck-d")
+		if 'sc quit sc
+	}
+	
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="evalXPath">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>doc,exp,val,default=""</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set sc = doc.EvaluateExpression("/code",exp,.res)
+	if 'sc quit sc
+	
+	if res.Size'=0 {
+		set val = res.GetAt(1).Value
+	} else {
+		if default'="" { 
+			set val = default
+		} else {
+			quit $System.Status.Error(5001,"@"_exp_" not defined.")
+		}
+	}
+	
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<XData name="zlangc">
+<Data><![CDATA[
+<code name="%ZLANGC00" os="false">
+<![CDATA[
+ZISCLOG() public {
+	set file="/tmp/isclog.txt"
+	set io=$IO
+	
+	try {
+		open file:"WNS"
+		use file
+		zwrite ^%ISCLOG
+		close file
+		use io
+	} catch e {
+		use io
+		try { close file } catch {}
+		do e.OutputToDevice()
+	}
+}
+
+ZERR() public {
+	do $system.OBJ.DisplayError()
+}
+
+ZSOAP(enable=1) public {
+	if enable {
+		set ^ISCSOAP("Log")="ios"
+		set ^ISCSOAP("LogFile")=$System.Util.InstallDirectory()_"mgr/"_$zcvt($namespace,"L")_"soap.log"
+		write "SOAP log enabled in: "_^ISCSOAP("LogFile"),!
+	} else {
+		kill ^ISCSOAP
+		write "SOAP log disabled",!
+	}
+}
+
+ZSTACK() public {
+	set $ecode=""
+	
+	for i=$stack-1:-1:1 {
+		write $stack(i),?8,$stack(i,"PLACE"),?40,$stack(i,"MCODE"),!
+	}
+}]]]]><![CDATA[></code>
+]]></Data>
+</XData>
+
+<XData name="instanceVars">
+<Data><![CDATA[
+<code name="/root/cache-instance-vars.sh" os="true">
+	<![CDATA[#!/bin/bash
+
+IFS=$'\n'
+arr=( $(ccontrol qlist) )
+for res in ${arr[*]}
+do 
+  name=`echo $res | cut -d "^" -f 1` 
+  path=`echo $res | cut -d "^" -f 2` 
+  build=`echo $res | cut -d "^" -f 3` 
+  start=`echo $res | cut -d "^" -f 4` 
+  cpf=`echo $res | cut -d "^" -f 5` 
+  ssport=`echo $res | cut -d "^" -f 6` 
+  webport=`echo $res | cut -d "^" -f 7` 
+  javaport=`echo $res | cut -d "^" -f 8` 
+  state=`echo $res | cut -d "^" -f 9`
+  
+  export ${name}SS=$ssport
+  export ${name}WEB=$webport
+  export ${name}CPF=$path/$cpf
+  export ${name}MGR=$path/mgr
+  export ${name}BIN=$path/bin
+  export ${name}CC=$path/mgr/cconsole.log
+  export ${name}DIR=$path
+
+  unset name path build start cpf ssport webport javaport state
+done
+
+unset arr res
+]]]]><![CDATA[>
+	</code>
+]]></Data>
+</XData>
+
+<XData name="bashprofile">
+<Data><![CDATA[
+<code name="/root/.bash_profile" os="true" append="true">
+	<![CDATA[
+ ##
+ # Added by SDK.Utils
+ ##
+ . cache-instance-vars.sh
+ ##
+ # End SDK.Utils
+ ##
+	]]]]><![CDATA[>
+	</code>
+]]></Data>
+</XData>
+
+<XData name="bashrc">
+<Data><![CDATA[
+<code name="/root/.bashrc" os="true" append="true">
+	<![CDATA[
+##
+# Added by SDK.Utils
+##
+sdk_cbounce() {
+	if [ -z "$1" ]
+	then
+		ccontrol stop `ccontrol default` restart quietly
+	else
+		ccontrol stop $1 restart quietly
+	fi
+}
+sdk_csession() {
+	if [ -z "$1" ] 
+	then
+		csession `ccontrol default`
+	else
+		csession $1
+	fi
+}
+
+alias cbounce='sdk_cbounce'
+alias cs='sdk_csession'
+
+##
+# End SDK.Utils
+##
+	]]]]><![CDATA[>
+	</code>
+]]></Data>
+</XData>
+</Class>
+</Export>
