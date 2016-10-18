@@ -1,34 +1,37 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Export generator="Cache" version="25" zv="Cache for UNIX (Red Hat Enterprise Linux for x86-64) 2014.1.3 (Build 775)" ts="2016-10-10 16:36:49">
+<Export generator="Cache" version="25" zv="Cache for UNIX (Red Hat Enterprise Linux for x86-64) 2014.1.3 (Build 775)" ts="2016-10-18 12:06:23">
 <Class name="SDK.Utils">
 <Super>%RegisteredObject</Super>
-<TimeChanged>64201,59776.974663</TimeChanged>
+<TimeChanged>64202,59167.753145</TimeChanged>
 <TimeCreated>64201,43355.933117</TimeCreated>
 
 <Method name="Load">
 <Description>
-TODO: load all XDatas (?)</Description>
+TODO: improve error handling
+TODO: streams</Description>
 <ClassMethod>1</ClassMethod>
 <Implementation><![CDATA[
-	set sc = ..LoadInternal("zlangc")
-	if 'sc do $system.OBJ.DisplayError(sc)
-	
-	set sc = ..LoadInternal("instanceVars")
-	if 'sc do $system.OBJ.DisplayError(sc)
-	
-	set sc = ..LoadInternal("bashprofile")
-	if 'sc do $system.OBJ.DisplayError(sc)
-	
-	set sc = ..LoadInternal("bashrc")
-	if 'sc do $system.OBJ.DisplayError(sc)
+	try {
+		set cls = ##class(%Dictionary.ClassDefinition).%OpenId($classname())
+		for i=1:1:cls.XDatas.Count() {
+			set sc = ..LoadInternal(cls.XDatas.GetAt(i).Name)
+			if 'sc do $system.OBJ.DisplayError(sc)		
+		}
+	} catch (e) {
+		do e.OutputToDevice()
+	}
 ]]></Implementation>
 </Method>
 
+<Parameter name="BEGINCOMMENT">
+<Default># Added by SDK.Utils</Default>
+</Parameter>
+
+<Parameter name="ENDCOMMENT">
+<Default># End SDK.Utils</Default>
+</Parameter>
+
 <Method name="LoadInternal">
-<Description>
-TODO: detect OS
-TODO: detect user home directory
-TODO: detect if file has been appended to (Update?)</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec>element</FormalSpec>
 <ReturnType>%Status</ReturnType>
@@ -53,18 +56,49 @@ TODO: detect if file has been appended to (Update?)</Description>
 	
 	set isOS = (isOS="true")
 	set append = (append="true")
+	set name = ..expandString(name,.sc)
+	if 'sc quit sc
+	set text = $zstrip(text,"<>",$C(13,10))
+	
+	set isUnix = ($zversion["UNIX")
 	
 	if isOS {
+		if 'isUnix quit $$$OK // OS scripts not supported on Windows/VMS
+		
 		set file = ##class(%Stream.FileCharacter).%New()
 		set file.Filename=name
 		
+		set addComments = 0
+		
 		if append {
-			do file.MoveToEnd()
+			// read text, remove old definition (if present)
+			set addComments = 1
+			set oldtext = file.Read($system.SYS.MaxLocalLength())
+			set s = $find(oldtext,..#BEGINCOMMENT) 
+			if s'=0 {
+				set e = $find(oldtext,..#ENDCOMMENT,s)-1
+				if e=0 set e = s
+				set s = s-$length(..#BEGINCOMMENT)
+				set $extract(oldtext,s,e)=""
+			}
+			
+			set oldtext = $zstrip(oldtext,">",$C(13,10))
+			
+			do file.Clear()
+			do file.Write(oldtext)
 		} else {
 			do file.Clear()
 		}
 		
+		if addComments {
+			do file.WriteLine(file.LineTerminator)
+			do file.WriteLine(..#BEGINCOMMENT)
+		}
 		do file.Write(text)
+		if addComments {
+			do file.WriteLine()
+			do file.WriteLine(..#ENDCOMMENT)
+		}
 		do file.%Save()
 	} else {
 		set rtn = ##class(%Routine).%New(name)
@@ -78,6 +112,39 @@ TODO: detect if file has been appended to (Update?)</Description>
 	}
 	
 	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="expandString">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[str,&sc:%Status]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set sc = $$$OK
+	set value("home") = $System.Util.GetEnviron("HOME")
+	set v = $System.Util.InstallDirectory()
+	if ($e(v,*)="/")||($e(v,*)="\") {
+		set $e(v,*)=""
+	}
+	set value("install") = v
+	
+	while str["{$" {
+		set s=$f(str,"{$")
+		set e=$f(str,"}",s)-2
+		
+		set var = $zcvt($e(str,s,e),"L")
+		set val = $g(value(var))
+		
+		if val="" {
+			set sc = $System.Status.Error(5001,"Invalid variable: $"_var)
+			set str = ""
+			quit
+		}
+		
+		set $e(str,s-2,e+1)=val
+	}
+	
+	quit str
 ]]></Implementation>
 </Method>
 
@@ -102,6 +169,13 @@ TODO: detect if file has been appended to (Update?)</Description>
 	quit $$$OK
 ]]></Implementation>
 </Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// Payload:
+
+]]></Content>
+</UDLText>
 
 <XData name="zlangc">
 <Data><![CDATA[
@@ -151,7 +225,7 @@ ZSTACK() public {
 
 <XData name="instanceVars">
 <Data><![CDATA[
-<code name="/root/cache-instance-vars.sh" os="true">
+<code name="{$HOME}/cache-instance-vars.sh" os="true">
 	<![CDATA[#!/bin/bash
 
 IFS=$'\n'
@@ -187,27 +261,14 @@ unset arr res
 
 <XData name="bashprofile">
 <Data><![CDATA[
-<code name="/root/.bash_profile" os="true" append="true">
-	<![CDATA[
- ##
- # Added by SDK.Utils
- ##
- . cache-instance-vars.sh
- ##
- # End SDK.Utils
- ##
-	]]]]><![CDATA[>
-	</code>
+<code name="{$HOME}/.bash_profile" os="true" append="true"><![CDATA[
+ . cache-instance-vars.sh]]]]><![CDATA[></code>
 ]]></Data>
 </XData>
 
 <XData name="bashrc">
 <Data><![CDATA[
-<code name="/root/.bashrc" os="true" append="true">
-	<![CDATA[
-##
-# Added by SDK.Utils
-##
+<code name="{$HOME}/.bashrc" os="true" append="true"><![CDATA[
 sdk_cbounce() {
 	if [ -z "$1" ]
 	then
@@ -226,13 +287,7 @@ sdk_csession() {
 }
 
 alias cbounce='sdk_cbounce'
-alias cs='sdk_csession'
-
-##
-# End SDK.Utils
-##
-	]]]]><![CDATA[>
-	</code>
+alias cs='sdk_csession']]]]><![CDATA[></code>
 ]]></Data>
 </XData>
 </Class>
